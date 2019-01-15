@@ -38,6 +38,8 @@ Use ARROWS or WASD keys for control.
 
 from __future__ import print_function
 
+import cv2
+
 
 # ==============================================================================
 # -- find carla module ---------------------------------------------------------
@@ -177,6 +179,7 @@ class World(object):
         self.camera_manager = CameraManager(self.vehicle, self.hud)
         self.camera_manager._transform_index = cam_pos_index
         self.camera_manager.set_sensor(cam_index, notify=False)
+        self.camera_manager.set_control_sensor()
         actor_type = get_actor_display_name(self.vehicle)
         self.hud.notification(actor_type)
 
@@ -197,6 +200,7 @@ class World(object):
     def destroy(self):
         actors = [
             self.camera_manager.sensor,
+            self.camera_manager.sensor4control,
             self.collision_sensor.sensor,
             self.lane_invasion_sensor.sensor,
             self.vehicle
@@ -220,12 +224,6 @@ class KeyboardControl(object):
         self._steer_cache = 0.0
         world.vehicle.set_autopilot(self._autopilot_enabled)
         world.hud.notification("Press 'H' or '?' for help.", seconds=4.0)
-
-    @staticmethod
-    def _diy_control(weak_self, image):
-        self = weak_self()
-        if not self:
-            return
         
     def parse_events(self, world, clock):
         for event in pygame.event.get():
@@ -267,13 +265,13 @@ class KeyboardControl(object):
                     world.vehicle.set_autopilot(self._autopilot_enabled)
                     world.hud.notification('Autopilot %s' % ('On' if self._autopilot_enabled else 'Off'))
                 elif event.key == K_e:
-                    self._diy_enabled = not self._diy_enabled
-                    world.hud.notification('DIY Autopilot %s' % ('On' if self._diy_enabled else 'Off'))
-        if (not self._autopilot_enabled) and (not self._diy_enabled):
+                    world.camera_manager.diy_mode_enabled = not world.camera_manager.diy_mode_enabled
+                    world.hud.notification('DIY Autopilot %s' % ('On' if world.camera_manager.diy_mode_enabled else 'Off'))
+        if (not self._autopilot_enabled) and (not world.camera_manager.diy_mode_enabled):
             self._parse_keys(pygame.key.get_pressed(), clock.get_time())
             self._control.reverse = self._control.gear < 0
             world.vehicle.apply_control(self._control)
-        elif self._diy_enabled:
+        elif world.camera_manager.diy_mode_enabled:
             # control the car based on data collected by the sensors
             self._control = world.camera_manager.control_action
             world.vehicle.apply_control(self._control)
@@ -554,8 +552,13 @@ class LaneInvasionSensor(object):
 
 
 class CameraManager(object):
+    """ This class instaniate a new object for each vehicle.
+    """
     def __init__(self, parent_actor, hud):
         self.sensor = None
+        # use this sensor to control
+        self.sensor4control = None
+        self.diy_mode_enabled = False
         self._surface = None
         self._parent = parent_actor
         self._hud = hud
@@ -612,6 +615,21 @@ class CameraManager(object):
             self._hud.notification(self._sensors[index][2])
         self._index = index
 
+    def set_control_sensor(self, type_of_sensor='sensor.camera.rgb'):
+        world = self._parent.get_world()
+        bp_library = world.get_blueprint_library()
+        bp = bp_library.find(type_of_sensor)
+        bp.set_attribute('image_size_x', str(self._hud.dim[0]))
+        bp.set_attribute('image_size_y', str(self._hud.dim[1]))
+        ## Generate Sensor for Control
+        self.sensor4control = self._parent.get_world().spawn_actor(
+            bp,                                             # rgb camera
+            carla.Transform(carla.Location(x=1.6, z=1.7)),  # first sight
+            attach_to=self._parent)                         # attach to parent
+        weak_self = weakref.ref(self)
+        self.sensor4control.listen(lambda image: CameraManager._parse_image_for_control(weak_self, image))
+        ##
+
     def next_sensor(self):
         self.set_sensor(self._index + 1)
 
@@ -648,20 +666,36 @@ class CameraManager(object):
             array = array[:, :, :3]
             array = array[:, :, ::-1]
             self._surface = pygame.surfarray.make_surface(array.swapaxes(0, 1))
-            # DIY Control
-            self._diy_control()
+            # DIY Control Based on RGB Camera
+            # if (self._sensors[self._index][0] == 'sensor.camera.rgb') and (self.diy_mode_enabled):
+            #     self._diy_control(image)
             
         if self._recording:
             image.save_to_disk('_out/%08d' % image.frame_number)
 
-    def _diy_control(self):
+    @staticmethod
+    def _parse_image_for_control(weak_self, image):
+        self = weak_self()
+        if not self:
+            return
+        image.convert(self._sensors[0][1])
+        if self.diy_mode_enabled:
+            self._diy_control(image)
+
+    def _diy_control(self, image):
         """ Control the car based on data we collected from sensors.
         """
-        self.counter += 1
-        if self.counter <= 100:
-            self.control_action.throttle = 1
-        else:
-            self.control_action.throttle = 0
+        array = np.frombuffer(image.raw_data, dtype=np.dtype("uint8"))
+        array = np.reshape(array, (image.height, image.width, 4))
+        array = array[:, :, :3]
+        cv2.imwrite('_out/%08d.jpg' % image.frame_number, array)
+
+        # simple demo of controling the car
+        # self.counter += 1
+        # if self.counter <= 100:
+        #     self.control_action.throttle = 1
+        # else:
+        #     self.control_action.throttle = 0
 
 
 # ==============================================================================
