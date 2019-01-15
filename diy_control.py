@@ -156,7 +156,7 @@ class World(object):
         cam_index = self.camera_manager._index if self.camera_manager is not None else 0
         cam_pos_index = self.camera_manager._transform_index if self.camera_manager is not None else 0
         # Get a random vehicle blueprint.
-        blueprint = random.choice(self.world.get_blueprint_library().filter('vehicle.bmw.*'))
+        blueprint = random.choice(self.world.get_blueprint_library().filter('vehicle.bmw.grandtourer'))
         blueprint.set_attribute('role_name', 'hero')
         if blueprint.has_attribute('color'):
             color = random.choice(blueprint.get_attribute('color').recommended_values)
@@ -171,7 +171,12 @@ class World(object):
             self.vehicle = self.world.try_spawn_actor(blueprint, spawn_point)
         while self.vehicle is None:
             spawn_points = self.world.get_map().get_spawn_points()
-            spawn_point = random.choice(spawn_points) if spawn_points else carla.Transform()
+            choice = random.randint(0, 133)
+            # choice = 29   # circular
+            # choice = 109  # road with angle
+            print('The current spawn point is: ', choice)
+            spawn_point = spawn_points[choice] if spawn_points else carla.Transform()
+            # spawn_point = random.choice(spawn_points) if spawn_points else carla.Transform()
             self.vehicle = self.world.try_spawn_actor(blueprint, spawn_point)
         # Set up the sensors.
         self.collision_sensor = CollisionSensor(self.vehicle, self.hud)
@@ -179,7 +184,8 @@ class World(object):
         self.camera_manager = CameraManager(self.vehicle, self.hud)
         self.camera_manager._transform_index = cam_pos_index
         self.camera_manager.set_sensor(cam_index, notify=False)
-        self.camera_manager.set_control_sensor()
+        # self.camera_manager.set_control_sensor('sensor.camera.rgb', cc.Raw)
+        self.camera_manager.set_control_sensor('sensor.camera.semantic_segmentation', cc.CityScapesPalette)
         actor_type = get_actor_display_name(self.vehicle)
         self.hud.notification(actor_type)
 
@@ -553,12 +559,13 @@ class LaneInvasionSensor(object):
 
 class CameraManager(object):
     """ This class instaniate a new object for each vehicle.
+        Currently, the control part of each car is also implemented in this class.
+        This part will be move out of this class in the future.
     """
     def __init__(self, parent_actor, hud):
         self.sensor = None
-        # use this sensor to control
-        self.sensor4control = None
-        self.diy_mode_enabled = False
+        self.sensor4control = None     # Use this sensor to control
+        self.diy_mode_enabled = False  # Whether the car is running in DIY mode
         self._surface = None
         self._parent = parent_actor
         self._hud = hud
@@ -615,7 +622,7 @@ class CameraManager(object):
             self._hud.notification(self._sensors[index][2])
         self._index = index
 
-    def set_control_sensor(self, type_of_sensor='sensor.camera.rgb'):
+    def set_control_sensor(self, type_of_sensor, mode):
         world = self._parent.get_world()
         bp_library = world.get_blueprint_library()
         bp = bp_library.find(type_of_sensor)
@@ -627,8 +634,7 @@ class CameraManager(object):
             carla.Transform(carla.Location(x=1.6, z=1.7)),  # first sight
             attach_to=self._parent)                         # attach to parent
         weak_self = weakref.ref(self)
-        self.sensor4control.listen(lambda image: CameraManager._parse_image_for_control(weak_self, image))
-        ##
+        self.sensor4control.listen(lambda image: CameraManager._parse_image_for_control(weak_self, image, mode))
 
     def next_sensor(self):
         self.set_sensor(self._index + 1)
@@ -666,19 +672,16 @@ class CameraManager(object):
             array = array[:, :, :3]
             array = array[:, :, ::-1]
             self._surface = pygame.surfarray.make_surface(array.swapaxes(0, 1))
-            # DIY Control Based on RGB Camera
-            # if (self._sensors[self._index][0] == 'sensor.camera.rgb') and (self.diy_mode_enabled):
-            #     self._diy_control(image)
             
         if self._recording:
             image.save_to_disk('_out/%08d' % image.frame_number)
 
     @staticmethod
-    def _parse_image_for_control(weak_self, image):
+    def _parse_image_for_control(weak_self, image, mode):
         self = weak_self()
         if not self:
             return
-        image.convert(self._sensors[0][1])
+        image.convert(mode)
         if self.diy_mode_enabled:
             self._diy_control(image)
 
@@ -688,14 +691,17 @@ class CameraManager(object):
         array = np.frombuffer(image.raw_data, dtype=np.dtype("uint8"))
         array = np.reshape(array, (image.height, image.width, 4))
         array = array[:, :, :3]
-        cv2.imwrite('_out/%08d.jpg' % image.frame_number, array)
+        self.control_action.throttle = 0.4
+        # cv2.imwrite('_out/%08d.jpg' % image.frame_number, array)
 
-        # simple demo of controling the car
-        # self.counter += 1
-        # if self.counter <= 100:
-        #     self.control_action.throttle = 1
-        # else:
-        #     self.control_action.throttle = 0
+        # ------------------------------------ #
+        # Simple demo: how to control the car  #
+        # self.counter += 1                    #
+        # if self.counter <= 100:              #
+        #     self.control_action.throttle = 1 #
+        # else:                                #
+        #     self.control_action.throttle = 0 #
+        # ------------------------------------ #
 
 
 # ==============================================================================
