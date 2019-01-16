@@ -171,9 +171,10 @@ class World(object):
             self.vehicle = self.world.try_spawn_actor(blueprint, spawn_point)
         while self.vehicle is None:
             spawn_points = self.world.get_map().get_spawn_points()
-            choice = random.randint(0, 133)
+            # choice = random.randint(0, 133)
             # choice = 29   # circular
             # choice = 109  # road with angle
+            choice = 16   # straght road
             print('The current spawn point is: ', choice)
             spawn_point = spawn_points[choice] if spawn_points else carla.Transform()
             # spawn_point = random.choice(spawn_points) if spawn_points else carla.Transform()
@@ -566,6 +567,7 @@ class CameraManager(object):
         self.sensor = None
         self.sensor4control = None     # Use this sensor to control
         self.diy_mode_enabled = False  # Whether the car is running in DIY mode
+        # self._trajectory = []
         self._surface = None
         self._parent = parent_actor
         self._hud = hud
@@ -691,17 +693,28 @@ class CameraManager(object):
         array = np.frombuffer(image.raw_data, dtype=np.dtype("uint8"))
         array = np.reshape(array, (image.height, image.width, 4))
         array = array[:, :, :3]
-        self.control_action.throttle = 0.4
+        self.control_action.throttle = 0.6
         # cv2.imwrite('_out/%08d.jpg' % image.frame_number, array)
 
         # ------------------------------------ #
-        # Simple demo: how to control the car  #
+        # Demo 1: how to control the car       #
         # self.counter += 1                    #
         # if self.counter <= 100:              #
         #     self.control_action.throttle = 1 #
         # else:                                #
         #     self.control_action.throttle = 0 #
         # ------------------------------------ #
+
+        # ----------------------------------------------- #
+        # Demo 2: how to get global info                  #
+        t = self._parent.get_transform()
+        v = self._parent.get_velocity()
+        heading = t.rotation.yaw 
+        x = t.location.x
+        y = t.location.y
+        speed = 3.6 * math.sqrt(v.x**2 + v.y**2 + v.z**2)
+        print(heading, (x, y), speed)
+        # ------------------------------------------------- #
 
 
 # ==============================================================================
