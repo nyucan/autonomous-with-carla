@@ -174,7 +174,8 @@ class World(object):
             # choice = random.randint(0, 133)
             # choice = 29   # circular
             # choice = 109  # road with angle
-            choice = 16   # straght road
+            # choice = 96
+            choice = 5   # straght road 
             print('The current spawn point is: ', choice)
             spawn_point = spawn_points[choice] if spawn_points else carla.Transform()
             # spawn_point = random.choice(spawn_points) if spawn_points else carla.Transform()
