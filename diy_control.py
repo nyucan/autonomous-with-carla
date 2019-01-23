@@ -568,7 +568,8 @@ class CameraManager(object):
         self.sensor = None
         self.sensor4control = None     # Use this sensor to control
         self.diy_mode_enabled = False  # Whether the car is running in DIY mode
-        # self._trajectory = []
+        self._traj = []                # The planed trajectory generated in advance
+        self._k = []                   # K values for controling
         self._surface = None
         self._parent = parent_actor
         self._hud = hud
@@ -691,11 +692,13 @@ class CameraManager(object):
     def _diy_control(self, image):
         """ Control the car based on data we collected from sensors.
         """
-        array = np.frombuffer(image.raw_data, dtype=np.dtype("uint8"))
-        array = np.reshape(array, (image.height, image.width, 4))
-        array = array[:, :, :3]
-        self.control_action.throttle = 0.6
+        # ------------------------------------ #
+        # Demo 0: how to get images
+        # array = np.frombuffer(image.raw_data, dtype=np.dtype("uint8"))
+        # array = np.reshape(array, (image.height, image.width, 4))
+        # array = array[:, :, :3]
         # cv2.imwrite('_out/%08d.jpg' % image.frame_number, array)
+        # ------------------------------------ #
 
         # ------------------------------------ #
         # Demo 1: how to control the car       #
@@ -708,14 +711,28 @@ class CameraManager(object):
 
         # ----------------------------------------------- #
         # Demo 2: how to get global info                  #
-        t = self._parent.get_transform()
-        v = self._parent.get_velocity()
-        heading = t.rotation.yaw 
-        x = t.location.x
-        y = t.location.y
-        speed = 3.6 * math.sqrt(v.x**2 + v.y**2 + v.z**2)
-        print(heading, (x, y), speed)
+        # t = self._parent.get_transform()
+        # v = self._parent.get_velocity()
+        # heading = t.rotation.yaw 
+        # x = t.location.x
+        # y = t.location.y
+        # speed = 3.6 * math.sqrt(v.x**2 + v.y**2 + v.z**2)
+        # print(heading, (x, y), speed)
         # ------------------------------------------------- #
+
+        # ------------------------------------ #
+        # Demo 3: run in constant speed        #
+        # t = self._parent.get_transform()
+        v = self._parent.get_velocity()
+        speed = 3.6 * math.sqrt(v.x**2 + v.y**2 + v.z**2)
+        k = -0.07
+        new_throttle = self.control_action.throttle + k * (speed - 20)
+        if new_throttle >= 0.7:
+            self.control_action.throttle = 0.7
+        elif new_throttle <= 0.4:
+            self.control_action.throttle = 0.4
+        else:
+            self.control_action.throttle = new_throttle
 
 
 # ==============================================================================
